@@ -34,6 +34,7 @@ class UpdateBanner(QFrame):
         super().__init__(parent)
         self.setObjectName("UpdateBanner")
         self._info: updater.UpdateInfo | None = None
+        self._action = "Update"  # primary button label: "Update" or "Install"
         self._checking = False
         self._downloading = False
         self._cancel = threading.Event()
@@ -109,6 +110,7 @@ class UpdateBanner(QFrame):
                 self.message.emit(f"You're up to date — version {__version__}.")
             return
         self._info = info
+        self._action = "Update"
         self.title.setText(f"Version {info.version} is available")
         first_line = next((line.strip("-*# ").strip() for line in info.notes.splitlines()
                            if line.strip("-*# ").strip()), "")
@@ -116,6 +118,23 @@ class UpdateBanner(QFrame):
         self.setToolTip(info.notes[:1500] if info.notes else "")
         self._set_buttons("Later", "Update" if is_frozen() else "Open download page")
         self.progress.hide()
+        self._reveal()
+
+    def install_version(self, info: updater.UpdateInfo) -> None:
+        """Download and install a version picked by the user, newer or older."""
+        if self._checking or self._downloading:
+            return
+        self._info = info
+        self._action = "Install"
+        self.title.setText(f"Installing version {info.version}")
+        self.subtitle.setText(f"You have {__version__}.")
+        self.setToolTip("")
+        self._set_buttons("Later", "Install")
+        self.progress.hide()
+        self._reveal()
+        self.update_requested.emit()
+
+    def _reveal(self) -> None:
         if not self.isVisible():
             self.show()
             fade_in(self)
@@ -202,7 +221,7 @@ class UpdateBanner(QFrame):
         self._downloading = False
         self.progress.hide()
         self.subtitle.setText("Download cancelled.")
-        self._set_buttons("Later", "Update")
+        self._set_buttons("Later", self._action)
 
     def is_downloading(self) -> bool:
         return self._downloading
