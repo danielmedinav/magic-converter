@@ -9,11 +9,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, Qt, QThread, QTimer, QUrl, Slot
+from PySide6.QtCore import QByteArray, QPoint, Qt, QThread, QTimer, QUrl, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QVBoxLayout,
-    QWidget,
+    QApplication, QDialog, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMenu, QMessageBox,
+    QVBoxLayout, QWidget,
 )
 
 from .. import APP_NAME, __version__, updater
@@ -22,12 +22,14 @@ from ..core.formats import MediaKind, default_target, dialog_filter
 from ..core.models import ConversionTask, Job, JobStatus, Options
 from ..core.planning import plan_outputs
 from ..core.worker import ConversionWorker
+from ..paths import is_frozen
 from ..settings import AppSettings, save_settings
 from . import icons, theme
 from .drop_zone import DropZone
 from .queue_list import QueueList
 from .settings_panel import SettingsPanel
 from .update_banner import UpdateBanner
+from .version_dialog import VersionDialog
 from .widgets import AnimatedButton, SmoothProgressBar
 
 THEME_CYCLE = {"system": "light", "light": "dark", "dark": "system"}
@@ -78,7 +80,7 @@ class MainWindow(QMainWindow):
         self.theme_btn = AnimatedButton("", "ghost", "monitor")
         self.theme_btn.clicked.connect(self._cycle_theme)
         self.version_btn = AnimatedButton(f"v{__version__}", "ghost")
-        self.version_btn.setToolTip("Check for updates")
+        self.version_btn.setToolTip("Updates and versions")
         header = QHBoxLayout()
         header.setSpacing(10)
         header.addWidget(self.logo)
@@ -88,7 +90,7 @@ class MainWindow(QMainWindow):
         header.addWidget(self.theme_btn)
 
         self.update_banner = UpdateBanner()
-        self.version_btn.clicked.connect(lambda: self.update_banner.check(manual=True))
+        self.version_btn.clicked.connect(self._show_version_menu)
         self.update_banner.message.connect(self._show_message)
         self.update_banner.update_requested.connect(self._on_update_requested)
         self.update_banner.install_ready.connect(self._install_update)
@@ -521,6 +523,30 @@ class MainWindow(QMainWindow):
             self._msg_timer.start()
 
     # --- Updates ------------------------------------------------------------
+
+    def _show_version_menu(self) -> None:
+        menu = QMenu(self)
+        menu.addAction("Check for updates").triggered.connect(
+            lambda: self.update_banner.check(manual=True))
+        menu.addAction("Install another version…").triggered.connect(self._choose_version)
+        btn = self.version_btn
+        menu.exec(btn.mapToGlobal(QPoint(0, btn.height() + 4)))
+
+    def _choose_version(self) -> None:
+        if not updater.enabled():
+            self._show_message(f"Magic Converter {__version__} · update checks are not configured.")
+            return
+        if self.update_banner.is_downloading():
+            self._show_message("An update is already downloading.")
+            return
+        dialog = VersionDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted or not dialog.selected:
+            return
+        if not is_frozen():
+            # Running from source: there is no installed app to replace.
+            QDesktopServices.openUrl(QUrl(dialog.selected.page_url))
+            return
+        self.update_banner.install_version(dialog.selected)
 
     def _on_update_requested(self) -> None:
         if self._busy():

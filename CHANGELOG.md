@@ -8,6 +8,12 @@ moves them under the new version number automatically.
 
 ## [Unreleased]
 
+- Install any published version: click the version label in the header →
+  **Install another version…**, choose from the list (with each version's notes) and
+  install it, newer or older. Settings are kept.
+- The version label now opens a small menu: **Check for updates** / **Install another version…**.
+- The installer clears the previous app files first, so nothing from another version is left behind.
+
 ## [1.1.0] - 2026-11-01
 
 - Each file in the queue now has its own output-format dropdown, so different files

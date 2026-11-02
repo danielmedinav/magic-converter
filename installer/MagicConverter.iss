@@ -40,6 +40,10 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+; Start from a clean app folder so no files from another version (newer or older) are left behind.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "..\dist\MagicConverter\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 

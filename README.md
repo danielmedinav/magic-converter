@@ -46,6 +46,12 @@ Click **…** → **Keep** → **Show more** → **Keep anyway**.
 **Upgrading:** run the newer installer. It replaces the old version in place and keeps your
 settings, with no need to uninstall first.
 
+**Installing a specific version:** in the app, click the version label in the header
+(for example `v1.2.0`) → **Install another version…**, pick any version from the list
+(newer or older) and click **Install**. Without the app, download that version's
+installer from the Releases page. Running an older installer over a newer version
+replaces it, and your settings are kept.
+
 **Uninstalling:** *Settings → Apps → Installed apps → Magic Converter → Uninstall*.
 Your settings in `%APPDATA%\MagicConverter` are left behind. Delete that folder for a clean removal.
 
@@ -194,9 +200,12 @@ Without `-Publish`, the script prints the steps for uploading the installer to G
 ### How users get the update
 
 - On start-up, the app quietly checks the latest GitHub Release. Users can also click the
-  version label in the header to check manually.
+  version label in the header → **Check for updates**.
 - If a newer version exists, a banner offers **Update**. The app downloads the installer,
   checks its size and SHA-256, closes, upgrades silently and reopens. Settings are kept.
+- **Install another version…** in the same menu lists every published release (drafts and
+  pre-releases are skipped) with its notes. The user picks one, newer or older, and it installs
+  the same way. Only releases with a `Setup.exe` attached appear, so keep old releases published.
 - Users without the app just download the latest `Setup.exe` from the Releases page.
   Installing over an older version upgrades it in place.
 
@@ -217,7 +226,7 @@ magic_converter/
   app.py                        QApplication bootstrap, fonts, theme
   paths.py                      resource paths (dev + frozen), %APPDATA% dir
   settings.py                   persistent settings (JSON)
-  updater.py                    GitHub Releases update check, download, install
+  updater.py                    GitHub Releases update check, version list, download, install
   core/                         conversion logic, no UI code
     formats.py                  supported formats, default output per type
     detect.py                   real file type from magic bytes
@@ -233,6 +242,7 @@ magic_converter/
     icons.py                    inline SVG icon set
     widgets.py                  animated button, progress bar, segmented control
     drop_zone.py, queue_list.py, settings_panel.py, update_banner.py, main_window.py
+    version_dialog.py           "Install another version" picker
 resources/                      icon + bundled ffmpeg
 scripts/                        make_icon.py, fetch_ffmpeg.ps1, build.ps1, release.ps1
 CHANGELOG.md                    release notes, one section per version
