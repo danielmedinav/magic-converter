@@ -99,6 +99,11 @@ class VersionDialog(QDialog):
     def _load(self) -> None:
         self.retry_btn.hide()
         self.notes.setTextFormat(Qt.TextFormat.PlainText)
+        if not updater.enabled():
+            self.notes.setText(
+                "This copy of Magic Converter isn't connected to a releases page, so it can't "
+                "list other versions. Download the installer for the version you want instead.")
+            return
         self.notes.setText("Loading versions…")
 
         def work() -> None:
@@ -114,7 +119,10 @@ class VersionDialog(QDialog):
     def _on_loaded(self, releases: list) -> None:
         self._releases = releases
         if not releases:
-            self.notes.setText("No versions are available to install right now.")
+            self.notes.setText(
+                "No versions were found. The releases page may be private or empty. "
+                "Download the installer for the version you want instead.")
+            self.retry_btn.show()
             return
         self.combo.blockSignals(True)
         self.combo.clear()

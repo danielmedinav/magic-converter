@@ -6,4 +6,4 @@ __version__ = "1.1.0"
 
 # GitHub repository ("owner/name") whose Releases host the installers, e.g.
 # "danielmedina/magic-converter". Leave empty to turn update checks off.
-UPDATE_REPO = ""
+UPDATE_REPO = "danielmedinav/magic-converter"

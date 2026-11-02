@@ -533,9 +533,6 @@ class MainWindow(QMainWindow):
         menu.exec(btn.mapToGlobal(QPoint(0, btn.height() + 4)))
 
     def _choose_version(self) -> None:
-        if not updater.enabled():
-            self._show_message(f"Magic Converter {__version__} · update checks are not configured.")
-            return
         if self.update_banner.is_downloading():
             self._show_message("An update is already downloading.")
             return
