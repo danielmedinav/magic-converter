@@ -13,20 +13,18 @@ from .errors import ConversionCancelled, ConversionError
 from .formats import MediaKind, extension_for
 from .image_converter import convert_image
 from .models import ConversionTask
+from .planning import free_path
 from .video_converter import convert_video
 
 log = logging.getLogger(__name__)
 
 
 def unique_output_path(task: ConversionTask) -> Path:
+    """The planned output path, unless something has taken that name since."""
+    if task.output_path is not None and not task.output_path.exists():
+        return task.output_path
     folder = task.output_dir or task.source.parent
-    ext = extension_for(task.options.format)
-    candidate = folder / f"{task.source.stem}{ext}"
-    n = 1
-    while candidate.exists():
-        candidate = folder / f"{task.source.stem} ({n}){ext}"
-        n += 1
-    return candidate
+    return free_path(folder, task.source.stem, extension_for(task.options.format))
 
 
 class ConversionWorker(QObject):

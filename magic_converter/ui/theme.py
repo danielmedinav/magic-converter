@@ -82,6 +82,12 @@ QToolTip {
 
 #QueueRow { background: transparent; border-radius: 10px; }
 #QueueRow:hover { background: $surface_alt; }
+#TypePill {
+    background: $surface_alt; border: 1px solid $border; border-radius: 9px;
+    color: $text_muted; font-size: 8.5pt; padding: 1px 0;
+}
+#OutputName { color: $accent; font-size: 9pt; }
+QComboBox#RowCombo { padding: 4px 8px; min-height: 18px; min-width: 60px; }
 
 QComboBox {
     background: $surface_alt; border: 1px solid $border; border-radius: 8px;

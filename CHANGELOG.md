@@ -8,6 +8,19 @@ moves them under the new version number automatically.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-01
+
+- Each file in the queue now has its own output-format dropdown, so different files
+  can be converted to different formats in one batch.
+- The dropdown only offers formats that fit the file's real type (images or
+  video/audio), detected from the file contents rather than the extension.
+- Sensible default output per type, e.g. HEIC → JPG, MOV → MP4, PNG → WEBP.
+- Each card shows an "Image" or "Video" label and a live preview of the output filename.
+- New "Apply to all images" / "Apply to all videos" actions above the queue.
+- Quality and resize stay global (Image / Video tabs in the bottom panel). The
+  per-file settings dialog was removed, because format is now chosen on the card.
+- README: new Installation section for end users and developers.
+
 ## [1.0.0] - 2026-11-01
 
 - First release.

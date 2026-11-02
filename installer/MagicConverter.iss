@@ -1,10 +1,10 @@
 ; Inno Setup 6.3+ script for Magic Converter.
 ; Build the PyInstaller folder first (dist\MagicConverter), then:
-;   ISCC.exe /DMyAppVersion=1.0.0 installer\MagicConverter.iss
+;   ISCC.exe /DMyAppVersion=1.1.0 installer\MagicConverter.iss
 
 #define MyAppName "Magic Converter"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.1.0"
 #endif
 #define MyAppPublisher "Magic Converter"
 #define MyAppExeName "MagicConverter.exe"

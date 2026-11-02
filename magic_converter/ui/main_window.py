@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import copy
+import dataclasses
 import os
 import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, QThread, QTimer, QUrl, Slot
+from PySide6.QtCore import QByteArray, Qt, QThread, QTimer, QUrl, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QHBoxLayout, QLabel, QMainWindow, QMessageBox, QVBoxLayout,
@@ -16,14 +17,16 @@ from PySide6.QtWidgets import (
 )
 
 from .. import APP_NAME, __version__, updater
-from ..core.formats import MediaKind, dialog_filter, kind_of
+from ..core.detect import detect
+from ..core.formats import MediaKind, default_target, dialog_filter
 from ..core.models import ConversionTask, Job, JobStatus, Options
+from ..core.planning import plan_outputs
 from ..core.worker import ConversionWorker
 from ..settings import AppSettings, save_settings
 from . import icons, theme
 from .drop_zone import DropZone
 from .queue_list import QueueList
-from .settings_panel import OverrideDialog, SettingsPanel
+from .settings_panel import SettingsPanel
 from .update_banner import UpdateBanner
 from .widgets import AnimatedButton, SmoothProgressBar
 
@@ -96,7 +99,8 @@ class MainWindow(QMainWindow):
 
         self.queue = QueueList()
         self.queue.remove_requested.connect(self._remove_job)
-        self.queue.settings_requested.connect(self._edit_job)
+        self.queue.format_changed.connect(self._on_format_changed)
+        self.queue.apply_all_requested.connect(self._apply_all)
         self.queue.open_requested.connect(self._reveal_job)
         self.queue.clear_requested.connect(self._clear_queue)
 
@@ -192,25 +196,31 @@ class MainWindow(QMainWindow):
 
         known = {self._key(j.source) for j in self.jobs.values()}
         added = skipped = 0
-        for f in files:
-            kind = kind_of(f)
-            if kind is None or ".mcpart." in f.name:
-                skipped += 1
-                continue
-            key = self._key(f)
-            if key in known:
-                continue
-            known.add(key)
-            try:
-                size = f.stat().st_size
-            except OSError:
-                size = 0
-            job = Job(source=f, kind=kind, size=size)
-            self.jobs[job.id] = job
-            opts = self._effective(job)
-            row = self.queue.add_job(job, opts.format, custom=False)
-            row.set_locked(self._busy())
-            added += 1
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            for f in files:
+                key = self._key(f)
+                if key in known:
+                    continue
+                # The real type comes from the file contents, not the extension.
+                found = None if ".mcpart." in f.name else detect(f)
+                if found is None:
+                    skipped += 1
+                    continue
+                known.add(key)
+                try:
+                    size = f.stat().st_size
+                except OSError:
+                    size = 0
+                job = Job(source=f, kind=found.kind, detected=found.format, size=size,
+                          format=default_target(found.kind, found.format))
+                self.jobs[job.id] = job
+                row = self.queue.add_job(job)
+                row.set_locked(self._busy())
+                added += 1
+        finally:
+            QApplication.restoreOverrideCursor()
+        self._refresh_previews()
 
         parts = []
         if added:
@@ -257,22 +267,72 @@ class MainWindow(QMainWindow):
 
     # --- Queue management ---------------------------------------------------
 
-    def _effective(self, job: Job) -> Options:
-        if job.override is not None:
-            return job.override
-        return self.settings.image if job.kind is MediaKind.IMAGE else self.settings.video
+    def _options_for(self, job: Job) -> Options:
+        """Global quality/size settings for the job's type + the job's own format."""
+        base = self.settings.image if job.kind is MediaKind.IMAGE else self.settings.video
+        return dataclasses.replace(copy.deepcopy(base), format=job.format)
 
-    def _refresh_targets(self) -> None:
-        for job in self.jobs.values():
-            row = self.queue.row(job.id)
+    def _output_dir(self) -> Path | None:
+        if self.settings.output_mode == "custom" and self.settings.output_dir:
+            return Path(self.settings.output_dir)
+        return None
+
+    def _plan(self) -> dict[int, Path]:
+        """Planned output path for every job that still needs converting."""
+        pending = [j for j in self.jobs.values() if j.status is not JobStatus.DONE]
+        return plan_outputs([(j.id, j.source, j.format) for j in pending], self._output_dir())
+
+    def _refresh_previews(self) -> None:
+        if self._busy():  # names are fixed once a batch has started
+            return
+        for job_id, path in self._plan().items():
+            row = self.queue.row(job_id)
             if row:
-                row.set_target(self._effective(job).format, job.override is not None)
+                row.set_output_name(path.name, str(path))
+
+    def _on_format_changed(self, job_id: int, fmt: str) -> None:
+        job = self.jobs.get(job_id)
+        if not job or self._busy():
+            return
+        job.format = fmt
+        if job.status is JobStatus.DONE:  # picking a new format means "convert again"
+            job.status = JobStatus.WAITING
+            self.queue.row(job_id).set_waiting()
+        self._refresh_previews()
+        self._update_buttons()
+
+    def _apply_all(self, kind: MediaKind, fmt: str) -> None:
+        """Explicit batch action: set one format on every not-yet-converted file of a type."""
+        if self._busy():
+            return
+        changed = kept = 0
+        for job in self.jobs.values():
+            if job.kind is not kind:
+                continue
+            if job.status is JobStatus.DONE:
+                kept += 1
+                continue
+            job.format = fmt
+            self.queue.row(job.id).set_format(fmt)
+            changed += 1
+        noun = "image" if kind is MediaKind.IMAGE else "video"
+        plural = lambda n: f"{n} {noun}{'s' if n != 1 else ''}"  # noqa: E731
+        if not changed:
+            msg = (f"All {noun}s are already converted. Pick a format on a card to "
+                   f"convert one again.")
+        else:
+            msg = f"Set {plural(changed)} to {fmt}."
+            if kept:
+                msg += f" {plural(kept)} already converted left unchanged."
+        self._show_message(msg)
+        self._refresh_previews()
 
     def _remove_job(self, job_id: int) -> None:
         if self._busy():
             return
         self.jobs.pop(job_id, None)
         self.queue.remove(job_id)
+        self._refresh_previews()
         self._update_buttons()
 
     def _clear_queue(self) -> None:
@@ -284,20 +344,6 @@ class MainWindow(QMainWindow):
         self.overall_count.setText("")
         self.open_btn.hide()
         self._update_buttons()
-
-    def _edit_job(self, job_id: int) -> None:
-        job = self.jobs.get(job_id)
-        if not job or self._busy():
-            return
-        dlg = OverrideDialog(job.source.name, job.kind, self._effective(job),
-                             job.override is not None, self)
-        if dlg.exec():
-            job.override = dlg.result_options
-            if job.status is JobStatus.DONE:  # allow re-converting with new settings
-                job.status = JobStatus.WAITING
-                self.queue.row(job_id).set_waiting()
-            self._refresh_targets()
-            self._update_buttons()
 
     def _reveal_job(self, job_id: int) -> None:
         job = self.jobs.get(job_id)
@@ -319,7 +365,7 @@ class MainWindow(QMainWindow):
 
     def _on_settings_changed(self) -> None:
         self.panel.store(self.settings)
-        self._refresh_targets()
+        self._refresh_previews()  # the output folder may have changed
         self._save_timer.start()
 
     def _save_settings(self) -> None:
@@ -346,11 +392,9 @@ class MainWindow(QMainWindow):
         self.cancel_btn.setVisible(busy)
         self.cancel_btn.setEnabled(busy)
         self.cancel_btn.setText("Cancel")
-        self.queue.clear_btn.setEnabled(not busy)
+        self.queue.set_locked(busy)
         self.drop_zone.set_compact(bool(self.jobs))
         self.panel.set_locked(busy)
-        for row in self.queue.rows():
-            row.set_locked(busy)
 
     def _start(self) -> None:
         if self._busy():
@@ -360,16 +404,17 @@ class MainWindow(QMainWindow):
             self._show_message("Add some files first.")
             return
         self.panel.store(self.settings)
-        output_dir = None
-        if self.settings.output_mode == "custom":
-            output_dir = Path(self.settings.output_dir)
+        output_dir = self._output_dir()
+        plan = self._plan()
 
         tasks = []
         for job in pending:
             job.status = JobStatus.WAITING
-            self.queue.row(job.id).set_waiting()
-            tasks.append(ConversionTask(job.id, job.source, job.kind,
-                                        copy.deepcopy(self._effective(job)), output_dir))
+            row = self.queue.row(job.id)
+            row.set_waiting()
+            row.set_output_name(plan[job.id].name, str(plan[job.id]))
+            tasks.append(ConversionTask(job.id, job.source, job.kind, self._options_for(job),
+                                        output_dir, plan[job.id]))
         self._batch = [t.job_id for t in tasks]
 
         self._thread = QThread(self)
@@ -419,7 +464,9 @@ class MainWindow(QMainWindow):
             job.status = JobStatus.DONE
             job.output = Path(output)
             self._last_output = job.output
-            self.queue.row(job_id).set_done(output)
+            row = self.queue.row(job_id)
+            row.set_done(output)
+            row.set_output_name(job.output.name, output)
 
     @Slot(int, str, str)
     def _on_job_failed(self, job_id: int, message: str, detail: str) -> None:
@@ -449,6 +496,7 @@ class MainWindow(QMainWindow):
         if self._worker:
             self._worker.deleteLater()
         self._thread = self._worker = None
+        self._refresh_previews()
 
         statuses = [self.jobs[i].status for i in self._batch if i in self.jobs]
         done = statuses.count(JobStatus.DONE)

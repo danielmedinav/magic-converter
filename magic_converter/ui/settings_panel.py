@@ -1,22 +1,19 @@
-"""Conversion settings: image/video forms, output folder and the per-file dialog."""
+"""Global quality/size settings and the output folder.
+
+Output *format* is chosen per file on each queue card; everything here applies to
+all images (Image tab) or all videos (Video tab).
+"""
 
 from __future__ import annotations
 
-import copy
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QDialog, QFileDialog, QFrame, QGridLayout,
-    QHBoxLayout, QLabel, QLineEdit, QRadioButton, QSlider, QSpinBox, QStackedWidget,
-    QVBoxLayout, QWidget,
+    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout,
+    QLabel, QLineEdit, QRadioButton, QSlider, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
-from ..core.formats import (
-    IMAGE_OUTPUT_FORMATS, LOSSLESS_IMAGE_FORMATS, VIDEO_OUTPUT_FORMATS, VIDEO_PRESETS,
-    VIDEO_RESOLUTIONS, MediaKind,
-)
-from ..core.image_converter import AVIF_AVAILABLE
-from ..core.models import ImageOptions, Options, ResizeOptions, VideoOptions
+from ..core.formats import VIDEO_PRESETS, VIDEO_RESOLUTIONS
+from ..core.models import ImageOptions, ResizeOptions, VideoOptions
 from ..settings import AppSettings
 from .widgets import AnimatedButton, SegmentedControl, Separator
 
@@ -45,11 +42,10 @@ class ImageSettingsForm(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.format = QComboBox()
-        self.format.addItems([f for f in IMAGE_OUTPUT_FORMATS if f != "AVIF" or AVIF_AVAILABLE])
-
         self.quality = QSlider(Qt.Orientation.Horizontal)
         self.quality.setRange(1, 100)
+        self.quality.setToolTip("Used by JPG, WEBP and AVIF. Lossless formats "
+                                "(PNG, BMP, TIFF, GIF, ICO) ignore it.")
         self.quality_value = QLabel("90")
         self.quality_value.setFixedWidth(30)
         self.quality_value.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -91,9 +87,6 @@ class ImageSettingsForm(QWidget):
         self.resize_stack.addWidget(size_page)
         self.resize_stack.setFixedHeight(34)
 
-        fmt_row = QHBoxLayout()
-        fmt_row.addWidget(self.format)
-        fmt_row.addStretch()
         q_row = QHBoxLayout()
         q_row.setSpacing(10)
         q_row.addWidget(self.quality, 1)
@@ -109,15 +102,12 @@ class ImageSettingsForm(QWidget):
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(10)
-        grid.addWidget(_field_label("Format"), 0, 0)
-        grid.addLayout(fmt_row, 0, 1)
-        grid.addWidget(_field_label("Quality"), 1, 0)
-        grid.addLayout(q_row, 1, 1)
-        grid.addWidget(_field_label("Resize"), 2, 0)
-        grid.addLayout(radios, 2, 1)
+        grid.addWidget(_field_label("Quality"), 0, 0)
+        grid.addLayout(q_row, 0, 1)
+        grid.addWidget(_field_label("Resize"), 1, 0)
+        grid.addLayout(radios, 1, 1)
         grid.setColumnStretch(1, 1)
 
-        self.format.currentTextChanged.connect(self._on_change)
         self.quality.valueChanged.connect(self._on_change)
         self._resize_group.idClicked.connect(self._on_change)
         for w in (self.percent, self.width, self.height):
@@ -132,17 +122,11 @@ class ImageSettingsForm(QWidget):
 
     def _sync(self) -> None:
         self.quality_value.setText(str(self.quality.value()))
-        lossless = self.format.currentText() in LOSSLESS_IMAGE_FORMATS
-        self.quality.setEnabled(not lossless)
-        self.quality_value.setEnabled(not lossless)
-        self.quality.setToolTip("Not used by lossless formats" if lossless
-                                else "Higher = better quality, larger file")
         self.resize_stack.setCurrentIndex(max(0, self._resize_group.checkedId()))
 
     def get_options(self) -> ImageOptions:
         mode = ("none", "percent", "size")[max(0, self._resize_group.checkedId())]
         return ImageOptions(
-            format=self.format.currentText(),
             quality=self.quality.value(),
             resize=ResizeOptions(mode=mode, percent=self.percent.value(),
                                  width=self.width.value(), height=self.height.value(),
@@ -150,12 +134,10 @@ class ImageSettingsForm(QWidget):
         )
 
     def set_options(self, o: ImageOptions) -> None:
-        widgets = (self.format, self.quality, self.percent, self.width, self.height,
+        widgets = (self.quality, self.percent, self.width, self.height,
                    self.keep_aspect, self._resize_group)
         for w in widgets:
             w.blockSignals(True)
-        idx = self.format.findText(o.format)
-        self.format.setCurrentIndex(idx if idx >= 0 else 0)
         self.quality.setValue(o.quality)
         {"none": self.resize_off, "percent": self.resize_percent,
          "size": self.resize_size}.get(o.resize.mode, self.resize_off).setChecked(True)
@@ -169,10 +151,10 @@ class ImageSettingsForm(QWidget):
 
 
 PRESET_HINTS = {
-    "Low": "Smallest files, noticeably lower quality.",
-    "Medium": "Balanced size and quality — good for most uses.",
-    "High": "Visually near-lossless, larger files.",
-    "Original": "Keeps the source quality; copies streams without re-encoding when possible.",
+    "Low": "Smallest files, noticeably lower quality. MP3: 128 kbps.",
+    "Medium": "Balanced size and quality — good for most uses. MP3: 192 kbps.",
+    "High": "Visually near-lossless, larger files. MP3: 256 kbps.",
+    "Original": "Keeps the source quality; copies streams without re-encoding when possible. MP3: 320 kbps.",
 }
 
 
@@ -181,38 +163,32 @@ class VideoSettingsForm(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.format = QComboBox()
-        self.format.addItems(VIDEO_OUTPUT_FORMATS)
         self.resolution = QComboBox()
         self.resolution.addItems(VIDEO_RESOLUTIONS)
+        self.resolution.setToolTip("Only ever scales down. Ignored for MP3.")
         self.preset = SegmentedControl(VIDEO_PRESETS)
         self.hint = QLabel()
         self.hint.setObjectName("Small")
         self.hint.setWordWrap(True)
 
-        fmt_row = QHBoxLayout()
-        fmt_row.setSpacing(16)
-        fmt_row.addWidget(self.format)
-        fmt_row.addSpacing(8)
-        fmt_row.addWidget(_field_label("Resolution"))
-        fmt_row.addWidget(self.resolution)
-        fmt_row.addStretch()
+        res_row = QHBoxLayout()
+        res_row.addWidget(self.resolution)
+        res_row.addStretch()
         preset_row = QHBoxLayout()
         preset_row.addWidget(self.preset)
-        preset_row.addStretch()
+        preset_row.addSpacing(12)
+        preset_row.addWidget(self.hint, 1)
 
         grid = QGridLayout(self)
         grid.setContentsMargins(0, 0, 0, 0)
         grid.setHorizontalSpacing(16)
         grid.setVerticalSpacing(10)
-        grid.addWidget(_field_label("Format"), 0, 0)
-        grid.addLayout(fmt_row, 0, 1)
+        grid.addWidget(_field_label("Resolution"), 0, 0)
+        grid.addLayout(res_row, 0, 1)
         grid.addWidget(_field_label("Quality"), 1, 0)
         grid.addLayout(preset_row, 1, 1)
-        grid.addWidget(self.hint, 2, 1)
         grid.setColumnStretch(1, 1)
 
-        self.format.currentTextChanged.connect(self._on_change)
         self.resolution.currentTextChanged.connect(self._on_change)
         self.preset.currentChanged.connect(self._on_change)
         self.set_options(VideoOptions())
@@ -222,30 +198,18 @@ class VideoSettingsForm(QWidget):
         self.changed.emit()
 
     def _sync(self) -> None:
-        fmt = self.format.currentText()
-        self.resolution.setEnabled(fmt != "MP3")
-        if fmt == "MP3":
-            hint = "Extracts the audio track as MP3. " + {
-                "Low": "128 kbps.", "Medium": "192 kbps.", "High": "256 kbps.", "Original": "320 kbps.",
-            }[self.preset.current_text()]
-        elif fmt == "GIF":
-            hint = "Animated GIF with an optimised palette — best for short clips."
-        else:
-            hint = PRESET_HINTS[self.preset.current_text()]
-        self.hint.setText(hint)
+        self.hint.setText(PRESET_HINTS[self.preset.current_text()])
 
     def get_options(self) -> VideoOptions:
-        return VideoOptions(format=self.format.currentText(),
-                            resolution=self.resolution.currentText(),
+        return VideoOptions(resolution=self.resolution.currentText(),
                             preset=self.preset.current_text())
 
     def set_options(self, o: VideoOptions) -> None:
-        for w in (self.format, self.resolution, self.preset):
+        for w in (self.resolution, self.preset):
             w.blockSignals(True)
-        self.format.setCurrentText(o.format)
         self.resolution.setCurrentText(o.resolution)
         self.preset.set_current_text(o.preset, animate=False)
-        for w in (self.format, self.resolution, self.preset):
+        for w in (self.resolution, self.preset):
             w.blockSignals(False)
         self._sync()
 
@@ -312,7 +276,7 @@ class OutputSelector(QWidget):
 
 
 class SettingsPanel(QFrame):
-    """Card at the bottom of the window holding the default conversion settings."""
+    """Card at the bottom of the window: quality/size for all images or all videos."""
 
     changed = Signal()
 
@@ -349,8 +313,9 @@ class SettingsPanel(QFrame):
 
     def _on_tab(self, index: int) -> None:
         self.stack.setCurrentIndex(index)
-        self.tab_hint.setText("Applies to all images in the queue" if index == 0
-                              else "Applies to all videos in the queue")
+        self.tab_hint.setText(
+            "Quality and size for all images · pick formats on each file above" if index == 0
+            else "Quality and size for all videos · pick formats on each file above")
         self.changed.emit()
 
     def load(self, s: AppSettings) -> None:
@@ -370,63 +335,3 @@ class SettingsPanel(QFrame):
     def set_locked(self, locked: bool) -> None:
         for w in (self.image_form, self.video_form, self.output, self.tabs):
             w.setEnabled(not locked)
-
-
-class OverrideDialog(QDialog):
-    """Edit settings for a single file. ``result_options`` is None when reset to defaults."""
-
-    def __init__(self, filename: str, kind: MediaKind, options: Options,
-                 is_custom: bool, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("File settings")
-        self.setModal(True)
-        self.setMinimumWidth(560)
-        self.result_options: Options | None = None
-
-        title = QLabel(filename)
-        title.setObjectName("SectionTitle")
-        title.setWordWrap(True)
-        sub = QLabel("Custom settings for this file only. The defaults below the queue stay unchanged.")
-        sub.setObjectName("Muted")
-        sub.setWordWrap(True)
-
-        self.form = ImageSettingsForm() if kind is MediaKind.IMAGE else VideoSettingsForm()
-        self.form.set_options(copy.deepcopy(options))
-
-        card = QFrame()
-        card.setObjectName("Card")
-        cl = QVBoxLayout(card)
-        cl.setContentsMargins(20, 18, 20, 18)
-        cl.addWidget(self.form)
-
-        reset = AnimatedButton("Use defaults", "ghost")
-        reset.setEnabled(is_custom)
-        cancel = AnimatedButton("Cancel", "secondary")
-        apply = AnimatedButton("Apply", "primary")
-        reset.clicked.connect(self._reset)
-        cancel.clicked.connect(self.reject)
-        apply.clicked.connect(self._apply)
-
-        buttons = QHBoxLayout()
-        buttons.addWidget(reset)
-        buttons.addStretch()
-        buttons.addWidget(cancel)
-        buttons.addWidget(apply)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 22, 24, 20)
-        layout.setSpacing(12)
-        layout.addWidget(title)
-        layout.addWidget(sub)
-        layout.addSpacing(4)
-        layout.addWidget(card)
-        layout.addSpacing(6)
-        layout.addLayout(buttons)
-
-    def _apply(self) -> None:
-        self.result_options = self.form.get_options()
-        self.accept()
-
-    def _reset(self) -> None:
-        self.result_options = None
-        self.accept()

@@ -1,18 +1,105 @@
 # ✦ Magic Converter
 
 A modern, minimalist desktop app for converting images and videos on Windows.
-Drop in files or whole folders, pick a format, and hit **Convert**.
+Drop in files or whole folders, pick a format for each file, and hit **Convert**.
 
 - **Images:** JPG, PNG, WEBP, AVIF, BMP, TIFF, GIF, ICO (input also HEIC/HEIF)
 - **Videos:** MP4, MKV, MOV, AVI, WEBM, animated GIF, and MP3 audio extraction
+- Each file has its own output-format dropdown, an "Image"/"Video" label and a preview
+  of its output filename
+- File types are detected from the file contents, so a PNG named `.jpg` is still treated as a PNG
+- "Apply to all images" / "Apply to all videos" to set one format for a whole batch
 - Batch queue with per-file and overall progress, cancel at any time
-- Quality slider and resize for images. Resolution and Low/Medium/High/Original presets for video
-- Per-file settings override (the sliders button on each queue row)
+- Global quality and resize for images. Global resolution and Low/Medium/High/Original presets for video
 - Dark and light themes that follow Windows, with a manual toggle
 - Remembers your last settings
 - FFmpeg is bundled, so users don't need to install anything
 
 Built with **Python 3.11+**, **PySide6 (Qt 6)**, **Pillow** (+ pillow-heif) and **FFmpeg**.
+
+---
+
+## Installation
+
+### For users
+
+1. Download **`MagicConverter-Setup-X.X.X.exe`**, for example `MagicConverter-Setup-1.1.0.exe`.
+   Get it from the link you were sent, or from the repository's
+   [Releases](https://github.com/danielmedinav/magic-converter/releases) page if you have access.
+2. Double-click it. You don't need Python, FFmpeg or anything else.
+
+**The SmartScreen warning.** The installer isn't code-signed yet, so Windows may show a blue
+**"Windows protected your PC"** box. This is normal for new, unsigned apps:
+click **More info**, then **Run anyway**. Edge may also say the file "isn't commonly downloaded".
+Click **…** → **Keep** → **Show more** → **Keep anyway**.
+
+**The installer screens:**
+
+| Screen | What to do |
+|---|---|
+| **Select Setup Install Mode** | **Install for me only** (recommended, no admin password). *Install for all users* needs admin rights. |
+| **Select Destination Location** | Keep the default (`%LOCALAPPDATA%\Programs\Magic Converter` for "me only"). This screen is skipped when you upgrade. |
+| **Select Additional Tasks** | Tick **Create a desktop shortcut** if you want one. A Start Menu shortcut is always added. |
+| **Ready to Install** | Click **Install**. |
+| **Completing the Magic Converter Setup Wizard** | Leave **Launch Magic Converter** ticked and click **Finish**. |
+
+**Upgrading:** run the newer installer. It replaces the old version in place and keeps your
+settings, with no need to uninstall first.
+
+**Uninstalling:** *Settings → Apps → Installed apps → Magic Converter → Uninstall*.
+Your settings in `%APPDATA%\MagicConverter` are left behind. Delete that folder for a clean removal.
+
+### For developers (build from source)
+
+```powershell
+# 1. Install Python 3.11+ (tick "Add python.exe to PATH" if you use the python.org installer)
+winget install Python.Python.3.12
+
+# 2. Get the code and install the dependencies
+git clone https://github.com/danielmedinav/magic-converter.git
+cd magic-converter
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+
+# 3. Install Inno Setup (makes the installer)
+winget install JRSoftware.InnoSetup
+
+# 4. Build everything (from the project root)
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1
+```
+
+`build.ps1` downloads FFmpeg and generates the icon if they're missing. It then runs
+PyInstaller and Inno Setup.
+
+**Where the output lands:**
+
+| Path | What it is |
+|---|---|
+| `dist\MagicConverter\MagicConverter.exe` | The app folder. Runs without installing; useful for quick tests. |
+| `dist\installer\MagicConverter-Setup-<version>.exe` | **The installer you distribute.** |
+| `build\` | PyInstaller scratch files, safe to delete. |
+
+**Troubleshooting:**
+
+- **"ISCC.exe not found"**: Inno Setup isn't installed, or this terminal was opened before
+  you installed it. Run `winget install JRSoftware.InnoSetup`, then **open a new terminal**.
+  The script looks in `Program Files (x86)\Inno Setup 6`, `Program Files\Inno Setup 6`,
+  `%LOCALAPPDATA%\Programs\Inno Setup 6` and your `PATH`. If you installed it somewhere else,
+  add that folder to `PATH`.
+- **"winget is not recognized"**: install or update **App Installer** from the Microsoft Store,
+  then open a new terminal. Alternatively, download the installers directly from
+  [python.org](https://www.python.org/downloads/) and [jrsoftware.org](https://jrsoftware.org/isdl.php).
+- **FFmpeg missing**: either the build stops with `Missing ...\resources\ffmpeg\ffmpeg.exe`, or
+  the app says "FFmpeg was not found". Run
+  `powershell -ExecutionPolicy Bypass -File scripts\fetch_ffmpeg.ps1`. If the download is
+  blocked, download `ffmpeg-release-essentials.zip` from
+  [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) yourself. Then copy `bin\ffmpeg.exe` and
+  `bin\ffprobe.exe` into `resources\ffmpeg\` and build again.
+- **"running scripts is disabled on this system"**: use the full
+  `powershell -ExecutionPolicy Bypass -File ...` form shown above, rather than running `.\scripts\build.ps1` directly.
+- **`python` opens the Microsoft Store or isn't found**: install Python as in step 1, then turn off
+  the *python.exe* entries in *Settings → Apps → Advanced app settings → App execution aliases*.
 
 ---
 
@@ -55,8 +142,8 @@ powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 # 1. Build the app folder -> dist\MagicConverter\MagicConverter.exe
 python -m PyInstaller --noconfirm --clean MagicConverter.spec
 
-# 2. Build the installer -> dist\installer\MagicConverter-Setup-1.0.0.exe
-& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DMyAppVersion=1.0.0 installer\MagicConverter.iss
+# 2. Build the installer -> dist\installer\MagicConverter-Setup-1.1.0.exe
+& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DMyAppVersion=1.1.0 installer\MagicConverter.iss
 ```
 
 (If Inno Setup was installed with winget, ISCC is in `%LOCALAPPDATA%\Programs\Inno Setup 6\`.)
@@ -99,7 +186,7 @@ git add -A
 git commit -m "Add batch rename"
 
 # 4. Release: bumps the version, builds the installer, commits and tags
-powershell -ExecutionPolicy Bypass -File scripts\release.ps1 -Version 1.1.0 -Publish
+powershell -ExecutionPolicy Bypass -File scripts\release.ps1 -Version 1.2.0 -Publish
 ```
 
 Without `-Publish`, the script prints the steps for uploading the installer to GitHub by hand.
@@ -132,7 +219,9 @@ magic_converter/
   settings.py                   persistent settings (JSON)
   updater.py                    GitHub Releases update check, download, install
   core/                         conversion logic, no UI code
-    formats.py                  supported formats
+    formats.py                  supported formats, default output per type
+    detect.py                   real file type from magic bytes
+    planning.py                 output filename planning (preview + collisions)
     models.py                   Job / options dataclasses
     image_converter.py          Pillow pipeline
     ffmpeg.py                   ffmpeg/ffprobe discovery + probing
@@ -152,6 +241,28 @@ MagicConverter.spec             PyInstaller spec
 ```
 
 ## How conversions work
+
+**File type detection.** When a file is added, its first bytes are checked. JPEG, PNG,
+GIF, TIFF, BMP, ICO, WEBP, HEIC, AVIF, MP4, MOV, 3GP, MKV, WEBM, AVI, WMV, FLV, OGV
+and MPEG/TS are all recognised from their contents. Anything else is offered to Pillow, and
+finally to `ffprobe` if its name looks like a video. Files that match nothing are skipped
+as unsupported.
+
+**Default output per detected type.** You can change any of these on the file's card, and
+the defaults live in `DEFAULT_IMAGE_TARGET` / `DEFAULT_VIDEO_TARGET` in `core/formats.py`.
+
+| Input | Default output |
+|---|---|
+| HEIC, AVIF, TIFF | JPG |
+| JPEG, BMP, ICO | PNG |
+| PNG, GIF | WEBP (keeps transparency and animation) |
+| WEBP | PNG |
+| MP4 | WEBM |
+| MOV, MKV, AVI, WEBM, WMV, … | MP4 |
+
+**Output filenames.** Each card previews its output name (`→ photo.jpg`). If that name is
+already taken on disk or by another file in the queue, the preview shows the numbered name
+that will actually be used, such as `photo (1).jpg`.
 
 | Output | Encoder | Notes |
 |---|---|---|

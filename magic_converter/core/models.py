@@ -60,8 +60,9 @@ class Job:
 
     source: Path
     kind: MediaKind
+    format: str                 # chosen output format, e.g. "JPG"
+    detected: str = ""          # real input format from the file contents, e.g. "HEIC"
     size: int = 0
-    override: Options | None = None
     status: JobStatus = JobStatus.WAITING
     output: Path | None = None
     id: int = field(default_factory=lambda: next(_job_ids))
@@ -76,3 +77,4 @@ class ConversionTask:
     kind: MediaKind
     options: Options
     output_dir: Path | None  # None = next to the source file
+    output_path: Path | None = None  # planned name; re-checked when the job starts
