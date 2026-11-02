@@ -1,0 +1,5 @@
+PySide6-Essentials>=6.8
+Pillow>=11.3
+pillow-heif>=0.20
+# Pillow 11.3+ already includes AVIF; this plugin is only a fallback for older Pillow.
+pillow-avif-plugin>=1.4; python_version < "3.13"
